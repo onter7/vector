@@ -120,7 +120,7 @@ public:
 				}
 				else {
 					std::copy(rhs.data_.GetAddress(), rhs.data_ + size_, data_.GetAddress());
-					std::uninitialized_copy_n(rhs.data_ + size_, rhs.Size() - size_, data_.GetAddress());
+					std::uninitialized_copy_n(rhs.data_ + size_, rhs.Size() - size_, data_.GetAddress() + size_);
 				}
 				size_ = rhs.Size();
 			}
@@ -178,22 +178,31 @@ public:
 		size_ = new_size;
 	}
 
-	template <typename U>
-	void PushBack(U&& value) {
-		if (size_ == Capacity()) {
-			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
-			new (new_data + size_) T(std::forward<U>(value));
-			CopyOrMoveAndSwap(new_data);
-		}
-		else {
-			new (data_ + size_) T(std::forward<U>(value));
-		}
-		++size_;
+	void PushBack(const T& value) {
+		EmplaceBack(value);
+	}
+
+	void PushBack(T&& value) {
+		EmplaceBack(std::move(value));
 	}
 
 	void PopBack() {
 		std::destroy_at(data_ + size_ - 1);
 		--size_;
+	}
+
+	template <typename... Args>
+	T& EmplaceBack(Args&&... args) {
+		if (size_ == Capacity()) {
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			new (new_data + size_) T(std::forward<Args>(args)...);
+			CopyOrMoveAndSwap(new_data);
+		}
+		else {
+			new (data_ + size_) T(std::forward<Args>(args)...);
+		}
+		++size_;
+		return data_[size_ - 1];
 	}
 
 private:
