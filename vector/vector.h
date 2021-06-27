@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 #include <new>
 #include <utility>
@@ -88,6 +89,9 @@ private:
 template <typename T>
 class Vector {
 public:
+	using iterator = T*;
+	using const_iterator = const T*;
+
 	Vector() = default;
 
 	explicit Vector(size_t size)
@@ -105,6 +109,10 @@ public:
 	Vector(Vector&& other) noexcept
 		: data_(std::move(other.data_))
 		, size_(std::exchange(other.size_, 0)) {
+	}
+
+	~Vector() {
+		std::destroy_n(data_.GetAddress(), size_);
 	}
 
 	Vector& operator=(const Vector& rhs) {
@@ -133,8 +141,28 @@ public:
 		return *this;
 	}
 
-	~Vector() {
-		std::destroy_n(data_.GetAddress(), size_);
+	iterator begin() noexcept {
+		return data_.GetAddress();
+	}
+
+	iterator end() noexcept {
+		return data_ + size_;
+	}
+
+	const_iterator begin() const noexcept {
+		return data_.GetAddress();
+	}
+
+	const_iterator end() const noexcept {
+		return data_ + size_;
+	}
+
+	const_iterator cbegin() const noexcept {
+		return data_.GetAddress();
+	}
+
+	const_iterator cend() const noexcept {
+		return data_ + size_;
 	}
 
 	size_t Size() const noexcept {
@@ -191,6 +219,22 @@ public:
 		--size_;
 	}
 
+	iterator Insert(const_iterator pos, const T& value) {
+		return Emplace(pos, value);
+	}
+
+	iterator Insert(const_iterator pos, T&& value) {
+		return Emplace(pos, std::move(value));
+	}
+
+	iterator Erase(const_iterator pos) {
+		iterator res_pos = const_cast<iterator>(pos);
+		std::move(res_pos + 1, end(), res_pos);
+		std::destroy_at(data_ + size_ - 1);
+		--size_;
+		return res_pos;
+	}
+
 	template <typename... Args>
 	T& EmplaceBack(Args&&... args) {
 		if (size_ == Capacity()) {
@@ -203,6 +247,54 @@ public:
 		}
 		++size_;
 		return data_[size_ - 1];
+	}
+
+	template <typename... Args>
+	iterator Emplace(const_iterator pos, Args&&... args) {
+		iterator res_pos = nullptr;
+		if (pos == cend()) {
+			res_pos = &EmplaceBack(std::forward<Args>(args)...);
+		}
+		else if (size_ == Capacity()) {
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			const size_t dist_pos = pos - begin();
+			new (new_data + dist_pos) T(std::forward<Args>(args)...);
+			if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+				std::uninitialized_move_n(begin(), dist_pos, new_data.GetAddress());
+			}
+			else {
+				try {
+					std::uninitialized_copy_n(begin(), dist_pos, new_data.GetAddress());
+				}
+				catch (...) {
+					std::destroy_at(new_data + dist_pos);
+				}
+			}
+			if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+				std::uninitialized_move_n(data_ + dist_pos, size_ - dist_pos, new_data + dist_pos + 1);
+			}
+			else {
+				try {
+					std::uninitialized_copy_n(data_ + dist_pos, size_ - dist_pos, new_data + dist_pos + 1);
+				}
+				catch (...) {
+					std::destroy_n(new_data.GetAddress(), dist_pos + 1);
+				}
+			}
+			std::destroy_n(begin(), size_);
+			data_.Swap(new_data);
+			res_pos = begin() + dist_pos;
+			++size_;
+		}
+		else {
+			T new_elem(std::forward<Args>(args)...);
+			new (data_ + size_) T(std::move(data_[size_ - 1u]));
+			res_pos = const_cast<iterator>(pos);
+			std::move_backward(res_pos, std::prev(end()), end());
+			*res_pos = std::move(new_elem);
+			++size_;
+		}
+		return res_pos;
 	}
 
 private:
