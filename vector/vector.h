@@ -122,12 +122,12 @@ public:
 				Swap(rhs_copy);
 			}
 			else {
+				const size_t copy_count = rhs.Size() < size_ ? rhs.Size() : size_;
+				std::copy(rhs.data_.GetAddress(), rhs.data_ + copy_count, data_.GetAddress());
 				if (rhs.Size() < size_) {
-					std::copy(rhs.data_.GetAddress(), rhs.data_ + rhs.Size(), data_.GetAddress());
 					std::destroy_n(data_ + rhs.Size(), size_ - rhs.Size());
 				}
-				else {
-					std::copy(rhs.data_.GetAddress(), rhs.data_ + size_, data_.GetAddress());
+				else if (rhs.Size() > size_) {
 					std::uninitialized_copy_n(rhs.data_ + size_, rhs.Size() - size_, data_.GetAddress() + size_);
 				}
 				size_ = rhs.Size();
@@ -230,8 +230,7 @@ public:
 	iterator Erase(const_iterator pos) {
 		iterator res_pos = const_cast<iterator>(pos);
 		std::move(res_pos + 1, end(), res_pos);
-		std::destroy_at(data_ + size_ - 1);
-		--size_;
+		PopBack();
 		return res_pos;
 	}
 
